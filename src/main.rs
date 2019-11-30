@@ -1,11 +1,66 @@
 #[macro_use]
 extern crate crossbeam_channel;
 
+use actix_web::{middleware, web, App, HttpRequest, HttpServer};
 use crossbeam_channel::bounded;
 use crossbeam_utils::thread;
+use std::env::set_var;
+use std::io;
 use std::sync::{Arc, Mutex};
 
-fn bar() {
+#[derive(Debug)]
+struct Backend {
+    url: String,
+    alive: bool,
+    // mux:
+    // reverse_proxy
+
+    // URL          *url.URL
+    // Alive        bool
+    // mux          sync.RWMutex
+    // ReverseProxy *httputil.ReverseProxy
+}
+
+#[derive(Debug)]
+struct ServerPool {
+    backends: Vec<Backend>,
+    current: usize, // backends []*Backend
+                    // current  uint64
+}
+
+// u, _ := url.Parse("http://localhost:8080")
+// rp := httputil.NewSingleHostReverseProxy(u)
+
+// // initialize your server and add this as handler
+// http.HandlerFunc(rp.ServeHTTP)
+
+fn index(_req: HttpRequest) -> &'static str {
+    "Hello world"
+}
+fn main() {
+    set_var("RUST_LOG", "sample_lb_info");
+    env_logger::init();
+
+    let _ = thread::scope(|scope| {
+        scope.spawn(|_| server("127.0.0.1:8081"));
+        scope.spawn(|_| server("127.0.0.1:8080"));
+    })
+    .unwrap();   
+}
+
+fn server(bind_url: &str) -> std::io::Result<()> {
+    println!("{}", bind_url);
+    HttpServer::new(|| {
+        App::new()
+            .wrap(middleware::Logger::default())
+            .service(web::resource("/index.html").to(|| "hello"))
+            .service(web::resource("/").to(index))
+    })
+    .bind(bind_url)?
+    .run()
+}
+
+fn _aaa() {
     let people = vec!["Anna", "Bob", "Cody", "Dave", "Eva"];
     let (s, r) = bounded(1); // Make room for one unmatched send.
 
@@ -30,7 +85,7 @@ fn bar() {
 }
 
 static NTHREAD: i32 = 3;
-fn main() {
+fn _bbb() {
     let (tx, rx) = bounded(NTHREAD as usize);
     let children = Arc::new(Mutex::new(vec![]));
 

@@ -9,3 +9,5 @@ edition = "2018"
 [dependencies]
 crossbeam-channel = "0.4"
 crossbeam-utils = "0.7"
+actix-web = "1.0.9"
+env_logger = "0.7.1"

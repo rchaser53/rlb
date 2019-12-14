@@ -18,7 +18,7 @@ async fn no_params() -> &'static str {
     "Hello world!\r\n"
 }
 
-pub fn server(bind_url: &str) -> std::io::Result<()> {
+pub async fn server(bind_url: &str) -> std::io::Result<()> {
   HttpServer::new(|| {
       App::new()
           .wrap(middleware::DefaultHeaders::new().header("X-Version", "0.2"))
@@ -35,6 +35,7 @@ pub fn server(bind_url: &str) -> std::io::Result<()> {
           .service(web::resource("/test1.html").to(|| async { "Test\r\n" }))
   })
   .bind(bind_url)?
-  .workers(1)
-  .run()
+  .system_exit()
+  .start()
+  .await
 }

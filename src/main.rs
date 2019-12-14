@@ -1,5 +1,7 @@
 use actix_web::client::Client;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+
+use std::net::TcpStream;
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
@@ -43,7 +45,11 @@ pub async fn forward(
 pub async fn main() -> std::io::Result<()> {
     let _ = thread::spawn(|| loop {
         sleep(Duration::new(2, 0));
-        println!("TBD need to implement health check");
+        if TcpStream::connect("127.0.0.1:8080").is_ok() {
+            println!("running!");
+        } else {
+            println!("down!");
+        }
     });
 
     println!("run proxy");

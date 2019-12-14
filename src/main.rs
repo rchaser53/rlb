@@ -1,7 +1,22 @@
-use actix_web::client::Client;
-use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::client::{Client, ClientRequest};
+use actix_web::{dev, middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use std::net::ToSocketAddrs;
 use url::Url;
+
+// TODO: This forwarded implementation is incomplete as it only handles the inofficial
+// X-Forwarded-For header but not the official Forwarded one.
+fn create_forwarded_req(
+    client: &web::Data<Client>,
+    head: &dev::RequestHead,
+    new_url: &str,
+) -> ClientRequest {
+    let forwarded_req = client.request_from(new_url, head).no_decompress();
+    if let Some(addr) = head.peer_addr {
+        forwarded_req.header("x-forwarded-for", format!("{}", addr.ip()))
+    } else {
+        forwarded_req
+    }
+}
 
 pub async fn forward(
     req: HttpRequest,
@@ -13,28 +28,14 @@ pub async fn forward(
     new_url.set_path(req.uri().path());
     new_url.set_query(req.uri().query());
 
-    // TODO: This forwarded implementation is incomplete as it only handles the inofficial
-    // X-Forwarded-For header but not the official Forwarded one.
-    let forwarded_req = client
-        .request_from(new_url.as_str(), req.head())
-        .no_decompress();
-    let forwarded_req = if let Some(addr) = req.head().peer_addr {
-        forwarded_req.header("x-forwarded-for", format!("{}", addr.ip()))
-    } else {
-        forwarded_req
-    };
+    let head = req.head();
+    let forwarded_req = create_forwarded_req(&client, head, new_url.as_str());
 
     let mut res = match forwarded_req.send_body(body.clone()).await {
         Ok(res) => res,
         Err(err) => {
-            let forwarded_req = client
-                .request_from("http://127.0.0.1:8081", req.head())
-                .no_decompress();
-            let forwarded_req = if let Some(addr) = req.head().peer_addr {
-                forwarded_req.header("x-forwarded-for", format!("{}", addr.ip()))
-            } else {
-                forwarded_req
-            };
+            let new_url = "http://127.0.0.1:8081";
+            let forwarded_req = create_forwarded_req(&client, head, new_url);
 
             println!("{}", err);
             forwarded_req.send_body(body).await?

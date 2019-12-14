@@ -24,7 +24,22 @@ pub async fn forward(
         forwarded_req
     };
 
-    let mut res = forwarded_req.send_body(body).await.map_err(Error::from)?;
+    let mut res = match forwarded_req.send_body(body.clone()).await {
+        Ok(res) => res,
+        Err(err) => {
+            let forwarded_req = client
+                .request_from("http://127.0.0.1:8081", req.head())
+                .no_decompress();
+            let forwarded_req = if let Some(addr) = req.head().peer_addr {
+                forwarded_req.header("x-forwarded-for", format!("{}", addr.ip()))
+            } else {
+                forwarded_req
+            };
+
+            println!("{}", err);
+            forwarded_req.send_body(body).await?
+        }
+    };
 
     let mut client_resp = HttpResponse::build(res.status());
     // Remove `Connection` as per

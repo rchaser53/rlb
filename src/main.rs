@@ -1,7 +1,8 @@
 use actix_web::client::Client;
-use actix_web::{
-    middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer,
-};
+use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use std::thread;
+use std::thread::sleep;
+use std::time::Duration;
 
 mod req;
 use crate::req::{create_forward_url, create_forwarded_req};
@@ -40,8 +41,12 @@ pub async fn forward(
 
 #[actix_rt::main]
 pub async fn main() -> std::io::Result<()> {
-    println!("run proxy");
+    let _ = thread::spawn(|| loop {
+        sleep(Duration::new(2, 0));
+        println!("TBD need to implement health check");
+    });
 
+    println!("run proxy");
     let proxy_addr = "127.0.0.1";
     let proxy_port = 3000;
 

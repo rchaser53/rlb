@@ -52,6 +52,9 @@ fn get_new_url() -> String {
 
     while !servers[current_index % length].is_alive {
         current_index += 1;
+        if servers.iter().all(|server| !server.is_alive) {
+            panic!("all server is down!");
+        }
     }
     servers[current_index % length].url.to_string()
 }

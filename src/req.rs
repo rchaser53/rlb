@@ -24,7 +24,7 @@ pub fn create_base_url(host: &str, port: u16) -> Url {
     .unwrap()
 }
 
-pub fn create_forward_url(original_url: &Uri, host: &str, port: u16) -> Url {
+pub fn _create_forward_url(original_url: &Uri, host: &str, port: u16) -> Url {
     let mut new_url = create_base_url(host, port);
 
     new_url.set_path(original_url.path());

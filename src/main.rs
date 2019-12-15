@@ -1,7 +1,8 @@
 use actix_web::client::Client;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use url::Url;
 
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -12,22 +13,22 @@ use std::time::Duration;
 extern crate lazy_static;
 
 mod req;
-use crate::req::{create_base_url, create_forward_url, create_forwarded_req};
+use crate::req::{create_base_url, create_forwarded_req};
 
 lazy_static! {
     static ref CURRENT_INDEX: AtomicUsize = AtomicUsize::new(0);
     static ref SERVERS: Mutex<Vec<Server>> = {
         let base_info = vec![
             Server {
-                url: create_base_url("127.0.0.1", 8000).to_string(),
+                url: create_base_url("127.0.0.1", 8000),
                 is_alive: true,
             },
             Server {
-                url: create_base_url("127.0.0.1", 8001).to_string(),
+                url: create_base_url("127.0.0.1", 8001),
                 is_alive: true,
             },
             Server {
-                url: create_base_url("127.0.0.1", 8002).to_string(),
+                url: create_base_url("127.0.0.1", 8002),
                 is_alive: true,
             },
         ];
@@ -36,8 +37,23 @@ lazy_static! {
 }
 
 pub struct Server {
-    pub url: String,
+    pub url: Url,
     pub is_alive: bool,
+}
+
+fn get_new_url() -> String {
+    let mut current_index = CURRENT_INDEX.fetch_add(1, Ordering::SeqCst);
+    if current_index > 100 {
+        CURRENT_INDEX.store(0, Ordering::SeqCst);
+    }
+
+    let servers = SERVERS.lock().unwrap();
+    let length = servers.len();
+
+    while !servers[current_index % length].is_alive {
+        current_index += 1;
+    }
+    servers[current_index % length].url.to_string()
 }
 
 pub async fn forward(
@@ -45,24 +61,26 @@ pub async fn forward(
     body: web::Bytes,
     client: web::Data<Client>,
 ) -> Result<HttpResponse, Error> {
-    let original_url = req.uri();
     let head = req.head();
-    let host = "127.0.0.1";
-
-    let new_url = create_forward_url(&original_url, host, 8080);
+    let new_url = get_new_url();
     let forwarded_req = create_forwarded_req(&client, head, new_url.as_str());
-    let mut res = match forwarded_req.send_body(body.clone()).await {
-        Ok(res) => res,
-        Err(err) => {
-            let new_url = "http://127.0.0.1:8081";
-            let forwarded_req = create_forwarded_req(&client, head, new_url);
+    let mut res_result = forwarded_req.send_body(body.clone()).await;
 
-            println!("{}", err);
-            forwarded_req.send_body(body).await?
-        }
-    };
-    let count = CURRENT_INDEX.load(Ordering::SeqCst);
-    println!("{:?}", count);
+    let mut res;
+    loop {
+        match res_result {
+            Ok(raw_res) => {
+                res = raw_res;
+                break;
+            }
+            Err(ref err) => {
+                println!("{}", err);
+                let new_url = get_new_url();
+                let forwarded_req = create_forwarded_req(&client, head, &new_url);
+                res_result = forwarded_req.send_body(body.clone()).await;
+            }
+        };
+    }
 
     let mut client_resp = HttpResponse::build(res.status());
     // Remove `Connection` as per
@@ -76,32 +94,43 @@ pub async fn forward(
 
 pub fn passive_check() {
     // create local state because I want not to use Mutex every time
-    let mut urls: Vec<_> = {
+    let mut host_and_ports: Vec<_> = {
         let servers = SERVERS.lock().unwrap();
         servers
             .iter()
-            .map(|server| server.url.to_string())
+            .map(|server| {
+                format!(
+                    "{}:{}",
+                    server.url.host_str().unwrap(),
+                    server.url.port().unwrap()
+                )
+            })
             .collect()
     };
     let _ = thread::spawn(move || loop {
-        sleep(Duration::new(10, 0));
+        sleep(Duration::new(2, 0));
 
         let mut remove_targets = vec![];
-        for (index, url) in urls.iter().enumerate() {
-            if TcpStream::connect(url).is_ok() {
-                println!("{} is running!", url);
-            } else {
-                println!("{} is down!", url);
-                remove_targets.push(index);
-                let mut servers = SERVERS.lock().unwrap();
-                servers[index].is_alive = false;
+        for (index, host_and_port) in host_and_ports.iter().enumerate() {
+            match TcpStream::connect(host_and_port) {
+                Ok(stream) => {
+                    println!("{} is running!", host_and_port);
+                    stream.shutdown(Shutdown::Both).expect("shutdown failed");
+                }
+                Err(err) => {
+                    println!("{}", err);
+                    println!("{} is down!", host_and_port);
+                    remove_targets.push(index);
+                    let mut servers = SERVERS.lock().unwrap();
+                    servers[index].is_alive = false;
+                }
             }
         }
 
         // use reverse to remove item from largest.
         remove_targets.reverse();
         for index in remove_targets {
-            urls.remove(index);
+            host_and_ports.remove(index);
         }
     });
 }

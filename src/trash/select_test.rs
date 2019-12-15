@@ -1,5 +1,3 @@
-
-
 fn _aaa() {
   let people = vec!["Anna", "Bob", "Cody", "Dave", "Eva"];
   let (s, r) = bounded(1); // Make room for one unmatched send.

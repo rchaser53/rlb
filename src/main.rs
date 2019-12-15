@@ -2,9 +2,17 @@ use actix_web::client::Client;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
+
+#[macro_use]
+extern crate lazy_static;
+
+lazy_static! {
+    static ref COUNT: AtomicUsize = AtomicUsize::new(0);
+}
 
 mod req;
 use crate::req::{create_forward_url, create_forwarded_req};
@@ -30,6 +38,8 @@ pub async fn forward(
             forwarded_req.send_body(body).await?
         }
     };
+    let count = COUNT.load(Ordering::SeqCst);
+    println!("{:?}", count);
 
     let mut client_resp = HttpResponse::build(res.status());
     // Remove `Connection` as per
@@ -45,6 +55,7 @@ pub async fn forward(
 pub async fn main() -> std::io::Result<()> {
     let _ = thread::spawn(|| loop {
         sleep(Duration::new(2, 0));
+        COUNT.fetch_add(1, Ordering::SeqCst);
         if TcpStream::connect("127.0.0.1:8080").is_ok() {
             println!("running!");
         } else {

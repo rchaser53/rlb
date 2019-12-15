@@ -16,12 +16,16 @@ pub fn create_forwarded_req(
     }
 }
 
-pub fn create_forward_url(original_url: &Uri, host: &str, port: u16) -> Url {
-    let mut new_url = Url::parse(&format!(
+pub fn create_base_url(host: &str, port: u16) -> Url {
+    Url::parse(&format!(
         "http://{}",
         (host, port).to_socket_addrs().unwrap().next().unwrap()
     ))
-    .unwrap();
+    .unwrap()
+}
+
+pub fn create_forward_url(original_url: &Uri, host: &str, port: u16) -> Url {
+    let mut new_url = create_base_url(host, port);
 
     new_url.set_path(original_url.path());
     new_url.set_query(original_url.query());

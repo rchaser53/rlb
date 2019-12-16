@@ -66,24 +66,37 @@ pub async fn forward(
     client: web::Data<Client>,
 ) -> Result<HttpResponse, Error> {
     let head = req.head();
-    let new_url = get_new_url();
-    let forwarded_req = create_forwarded_req(&client, head, new_url.as_str());
-    let mut res_result = forwarded_req.send_body(body.clone()).await;
-
     let mut res;
     loop {
-        match res_result {
-            Ok(raw_res) => {
-                res = raw_res;
-                break;
+        let new_url = get_new_url();
+
+        // Active Check
+        let retry_count: usize = 3;
+        let mut index = 0;
+        let inner_result;
+        loop {
+            let forwarded_req = create_forwarded_req(&client, head, new_url.as_str());
+            let res_result = forwarded_req.send_body(body.clone()).await;
+            match res_result {
+                Ok(raw_res) => {
+                    inner_result = Ok(raw_res);
+                    break;
+                }
+                Err(err) => {
+                    println!("{}", &err);
+                    if index >= retry_count {
+                        inner_result = Err(err);
+                        break;
+                    }
+                }
             }
-            Err(ref err) => {
-                println!("{}", err);
-                let new_url = get_new_url();
-                let forwarded_req = create_forwarded_req(&client, head, &new_url);
-                res_result = forwarded_req.send_body(body.clone()).await;
-            }
-        };
+            index += 1;
+        }
+
+        if let Ok(res_result) = inner_result {
+            res = res_result;
+            break;
+        }
     }
 
     let mut client_resp = HttpResponse::build(res.status());

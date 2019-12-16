@@ -2,7 +2,8 @@ use actix_web::client::Client;
 use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
 use url::Url;
 
-use std::net::{Shutdown, TcpStream};
+use std::net::TcpStream;
+use std::process::abort;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -53,7 +54,7 @@ fn get_new_url() -> String {
     while !servers[current_index % length].is_alive {
         current_index += 1;
         if servers.iter().all(|server| !server.is_alive) {
-            panic!("all server is down!");
+            abort_load_balancer()
         }
     }
     servers[current_index % length].url.to_string()
@@ -116,9 +117,8 @@ pub fn passive_check() {
         let mut remove_targets = vec![];
         for (index, host_and_port) in host_and_ports.iter().enumerate() {
             match TcpStream::connect(host_and_port) {
-                Ok(stream) => {
+                Ok(_) => {
                     println!("{} is running!", host_and_port);
-                    stream.shutdown(Shutdown::Both).expect("shutdown failed");
                 }
                 Err(err) => {
                     println!("{}", err);
@@ -135,7 +135,16 @@ pub fn passive_check() {
         for index in remove_targets {
             host_and_ports.remove(index);
         }
+
+        if host_and_ports.len() == 0 {
+            abort_load_balancer()
+        }
     });
+}
+
+fn abort_load_balancer() -> ! {
+    println!("all server is down!");
+    abort();
 }
 
 #[actix_rt::main]

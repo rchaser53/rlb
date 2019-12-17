@@ -1,5 +1,8 @@
-use actix_web::client::Client;
-use actix_web::{middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer};
+use actix_web::client::{Client, ClientResponse, SendRequestError};
+use actix_web::{
+    dev::{Decompress, Payload, PayloadStream, RequestHead},
+    middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer,
+};
 use url::Url;
 
 use std::net::TcpStream;
@@ -68,33 +71,8 @@ pub async fn forward(
     let head = req.head();
     let mut res;
     loop {
-        let new_url = get_new_url();
-
-        // Active Check
-        let retry_count: usize = 3;
-        let mut index = 0;
-        let inner_result;
-        loop {
-            let forwarded_req = create_forwarded_req(&client, head, new_url.as_str());
-            let res_result = forwarded_req.send_body(body.clone()).await;
-            match res_result {
-                Ok(raw_res) => {
-                    inner_result = Ok(raw_res);
-                    break;
-                }
-                Err(err) => {
-                    println!("{}", &err);
-                    if index >= retry_count {
-                        inner_result = Err(err);
-                        break;
-                    }
-                }
-            }
-            index += 1;
-        }
-
-        if let Ok(res_result) = inner_result {
-            res = res_result;
+        if let Ok(raw_res) = active_check(&client, head, &body, get_new_url().as_str()).await {
+            res = raw_res;
             break;
         }
     }
@@ -107,6 +85,30 @@ pub async fn forward(
     }
 
     Ok(client_resp.body(res.body().await?))
+}
+
+pub async fn active_check(
+    client: &web::Data<Client>,
+    head: &RequestHead,
+    body: &web::Bytes,
+    new_url: &str,
+) -> Result<ClientResponse<Decompress<Payload<PayloadStream>>>, SendRequestError> {
+    let retry_count: usize = 3;
+    let mut index = 0;
+    loop {
+        let forwarded_req = create_forwarded_req(&client, head, new_url);
+        let res_result = forwarded_req.send_body(body.clone()).await;
+        match res_result {
+            Ok(raw_res) => return Ok(raw_res),
+            Err(err) => {
+                println!("{}", &err);
+                if index >= retry_count {
+                    return Err(err);
+                }
+            }
+        }
+        index += 1;
+    }
 }
 
 pub fn passive_check() {

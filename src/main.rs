@@ -72,7 +72,7 @@ fn get_new_url() -> String {
     let length = servers.len();
 
     while !servers[current_index % length].is_alive {
-        current_index += 1;
+        current_index = CURRENT_INDEX.fetch_add(1, Ordering::SeqCst);
         if servers.iter().all(|server| !server.is_alive) {
             panic!("all server are down!");
         }

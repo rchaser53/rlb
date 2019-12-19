@@ -3,6 +3,9 @@ use actix_web::{
     dev::{Decompress, Payload, PayloadStream, RequestHead},
     middleware, web, App, Error, HttpRequest, HttpResponse, HttpServer,
 };
+use serde_derive::Deserialize;
+use serde_json::from_str;
+use std::fs;
 use url::Url;
 
 use std::net::TcpStream;
@@ -21,27 +24,42 @@ use crate::req::{create_base_url, create_forwarded_req};
 lazy_static! {
     static ref CURRENT_INDEX: AtomicUsize = AtomicUsize::new(0);
     static ref SERVERS: Mutex<Vec<Server>> = {
-        let base_info = vec![
-            Server {
-                url: create_base_url("127.0.0.1", 8000),
-                is_alive: true,
-            },
-            Server {
-                url: create_base_url("127.0.0.1", 8001),
-                is_alive: true,
-            },
-            Server {
-                url: create_base_url("127.0.0.1", 8002),
-                is_alive: true,
-            },
-        ];
+        let input =
+            fs::read_to_string("config.json").expect("check config.json in project root directory");
+        let result: Configs = from_str(&input).expect("should parse input");
+        let base_info = result
+            .servers
+            .into_iter()
+            .map(|server| Server::new(server.host, server.port))
+            .collect::<Vec<Server>>();
         Mutex::new(base_info)
     };
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Configs {
+    pub load_balancer: SeverConfig,
+    pub servers: Vec<SeverConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SeverConfig {
+    pub host: String,
+    pub port: u16,
 }
 
 pub struct Server {
     pub url: Url,
     pub is_alive: bool,
+}
+
+impl Server {
+    pub fn new(host: String, port: u16) -> Server {
+        Server {
+            url: create_base_url(&host, port),
+            is_alive: true,
+        }
+    }
 }
 
 fn get_new_url() -> String {
@@ -161,8 +179,12 @@ pub async fn main() -> std::io::Result<()> {
     passive_check();
 
     println!("run proxy");
-    let proxy_addr = "127.0.0.1";
-    let proxy_port = 3000;
+    let input =
+        fs::read_to_string("config.json").expect("check config.json in project root directory");
+    let result: Configs = from_str(&input).expect("should parse input");
+
+    let proxy_addr = result.load_balancer.host.as_str();
+    let proxy_port = result.load_balancer.port;
 
     HttpServer::new(move || {
         App::new()

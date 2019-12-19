@@ -6,7 +6,6 @@ use actix_web::{
 use url::Url;
 
 use std::net::TcpStream;
-use std::process::abort;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -57,7 +56,7 @@ fn get_new_url() -> String {
     while !servers[current_index % length].is_alive {
         current_index += 1;
         if servers.iter().all(|server| !server.is_alive) {
-            abort_load_balancer()
+            panic!("all server are down!");
         }
     }
     servers[current_index % length].url.to_string()
@@ -152,14 +151,9 @@ pub fn passive_check() {
         }
 
         if host_and_ports.len() == 0 {
-            abort_load_balancer()
+            panic!("all server are down!");
         }
     });
-}
-
-fn abort_load_balancer() -> ! {
-    println!("all server is down!");
-    abort();
 }
 
 #[actix_rt::main]

@@ -144,7 +144,7 @@ pub fn passive_check() {
             .collect()
     };
     let _ = thread::spawn(move || loop {
-        sleep(Duration::new(2, 0));
+        sleep(Duration::new(5, 0));
 
         let mut remove_targets = vec![];
         for (index, host_and_port) in host_and_ports.iter().enumerate() {
